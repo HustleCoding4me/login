@@ -51,6 +51,87 @@ public interface Filter {
 
 ## 요청 로그
 ---
+Filter 적용 테스트로 log를 남기는 방법을 알아보자.
+
+> 주의사항, `import javax.servlet.Filter` 를 구현해야 한다.
+
+1. interface `Filter` 구현체 생성
+
+```java
+import lombok.extern.slf4j.Slf4j;
+
+import javax.servlet.*;
+import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.util.UUID;
+
+@Slf4j
+public class LogFilter implements Filter {
+
+    @Override
+    public void init(FilterConfig filterConfig) throws ServletException {
+        log.info("log filter init");
+    }
+
+    @Override
+    public void destroy() {
+        log.info("log filter destory");
+    }
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+        log.info("log filter doFilter");
+
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        String requestURI = httpRequest.getRequestURI();
+
+        String uuid = UUID.randomUUID().toString();
+
+        try {
+            log.info("REQUEST [{}][{}]", uuid, requestURI);
+            //다음 Filter의 기능 실행 (체인 or 디스패쳐 서블릿에세 기능 넘기기)
+            chain.doFilter(request,response);
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            log.info("RESPONSE [{}] [{}]", uuid, requestURI);
+        }
+    }
+}
+```
+
+* `chain.doFilter(request,response)` : 다음 Filter의 기능 실행 (다음 filter 체인 or 디스패쳐 서블릿에 기능 넘기기)
+
+2. SpringBoot의 `FilterRegistrationBean` 에 등록
+
+```java
+
+
+@Configuration
+public class WebConfig {
+    @Bean
+    public FilterRegistrationBean logFilter() {
+        FilterRegistrationBean<Filter> filterFilterRegistrationBean = new FilterRegistrationBean<>();
+
+        //만든 로그필터 등록
+        filterFilterRegistrationBean.setFilter(new LogFilter());
+
+        //순서 등록
+        filterFilterRegistrationBean.setOrder(1);
+
+        //URL 패턴 적용
+        filterFilterRegistrationBean.addUrlPatterns("/*");
+
+        return filterFilterRegistrationBean;
+    }
+}
+
+```
+
+* SpringBoot에서 직접 만든 Filter를 WAS 실행시에 삽입하여준다.
+* `public class FilterRegistrationBean<T extends Filter> extends AbstractFilterRegistrationBean<T> {}` 를 빈으로 등록
+
+
 ## 인증 체크
 ---
 
