@@ -20,13 +20,13 @@
 
 ```java
 //기본 작동 순서
-HTTP 요청 -> WAS -> 필터 -> 서블릿 -> 컨트롤러 
+HTTP 요청 -> WAS -> 필터 -> 서블릿 -> 컨트롤러
 
 //제한 
-HTTP 요청 -> WAS -> 필터(부적절 요청 판단, 서블릿 요청 X) 끝
+        HTTP 요청 -> WAS -> 필터(부적절 요청 판단, 서블릿 요청 X) 끝
 
 //체인 
-HTTP 요청 -> WAS -> 필터1 -> 필터2 -> 필터3 -> 서블릿 -> 컨트롤러
+        HTTP 요청 -> WAS -> 필터1 -> 필터2 -> 필터3 -> 서블릿 -> 컨트롤러
 ```
 
 
@@ -36,15 +36,15 @@ HTTP 요청 -> WAS -> 필터1 -> 필터2 -> 필터3 -> 서블릿 -> 컨트롤러
 ```java
 public interface Filter {
 
-//필터 초기화, 초기 필터 생성시에 호출
- public default void init(FilterConfig filterConfig) throws ServletException {}
- 
- //요청이 올 때 마다 해당 메서드가 호출된다.
- public void doFilter(ServletRequest request, ServletResponse response,
- FilterChain chain) throws IOException, ServletException;
- 
- //필터 종료시 호출
- public default void destroy() {}
+    //필터 초기화, 초기 필터 생성시에 호출
+    public default void init(FilterConfig filterConfig) throws ServletException {}
+
+    //요청이 올 때 마다 해당 메서드가 호출된다.
+    public void doFilter(ServletRequest request, ServletResponse response,
+                         FilterChain chain) throws IOException, ServletException;
+
+    //필터 종료시 호출
+    public default void destroy() {}
 }
 ```
 
@@ -277,19 +277,98 @@ public class WebConfig {
 
 
 # 스프링 인터셉터
+
 ---
+
+* **서블릿 필터** vs **스프링 인터셉터**
+
+|               서블릿 필터                |                       스프링 인터셉터                        |
+| :--------------------------------------: | :----------------------------------------------------------: |
+|            서블릿이 제공한다             |                      스프링 MVC가 제공                       |
+| WAS와 디스패쳐 서블릿 사이에서 작동한다. |         디스패쳐 서블릿과 컨트롤러 호출 직전에 사용          |
+|                                          |       URL 패턴이 더 정밀해졌다. (MVC 이후 나왔기 때문)       |
+|      doFilter만 호출하여 사용한다.       | preHandle, postHandle,afterCompletion 등 호출 시점이 더 정교하다. |
+
+
+
+**스프링 인터셉터 작동 순서**
+
+
+
+* 기본 흐름
+
+```markdown
+HttP 요청 -> WAS -> 필터 -> 서블릿 -> **스프링 인터셉터** -> 컨트롤러
+```
+
+* 제한
+
+```markdown
+HttP 요청 -> WAS -> 필터 -> 서블릿 -> **스프링 인터셉터** (부적절 접근 Controller 호출 X) //비 로그인
+```
+
+* 체인
+
+```markdown
+HttP 요청 -> WAS -> 필터 -> 서블릿 -> log 인터셉터1 -> loginCheck 인터셉터2 -> 컨트롤러
+```
+
+
 
 ## 스프링 인터셉터란
+
 ---
 
+
+
+**인터페이스**
+
+```java
+public interface HandlerInterceptor {
+default boolean preHandle(HttpServletRequest request, HttpServletResponse 
+response,
+ Object handler) throws Exception {}
+default void postHandle(HttpServletRequest request, HttpServletResponse 
+response,
+ Object handler, @Nullable ModelAndView modelAndView)
+throws Exception {}
+default void afterCompletion(HttpServletRequest request, HttpServletResponse 
+response,
+ Object handler, @Nullable Exception ex) throws
+Exception {}
+}
+```
+
+* `preHandle` : 컨트롤러 호출 전 (사전 false인 경우 진행 중지)
+* `postHandle` : 컨트롤러 호출 후 (Controller 수행 후라 어떤 MV 가 들어있는지도 return 된다.)
+* `afterCompletion` : 요청 완료 이후 (뷰 렌더링 이후 예외가 발생해도 호출), 어떤 오류가 터졌는지 찍을 수도 있다.
+
+Http요청 -> Dispatcher Servlet -> `1.preHandle` -> Controller ->`2.postHandle` -> View -> `3.afterCompletion`
+
+
+
+1.preHandle 에서 예외가 발생하면, false를 return하여 바로 작동이 끝난다.
+
+2.Controller에서 예외가 발생하면, postHandle을 호출하지 않고 작동이 끝난다.
+
+3.afterCompletion은 앞에서 예외가 터져도 무조건 호출된다. (예외와 함께 전달)
+
+
+
+
+
 ## 요청 로그
+
 ---
 
 ## 인증 체크
+
 ---
 
 ## ArgumentResolver 사용
+
 ---
 
 # 마무리
+
 ---
