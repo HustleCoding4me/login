@@ -1,7 +1,9 @@
 # 서블릿 필터
+
 ---
 
 ## 서블릿 필터란
+
 ---
 
 주로 `웹`과 관련된 **공통관심사항** 을 처리할 때 사용한다.
@@ -15,9 +17,8 @@
 
 
 > 필터 작동 순서
- 
-```java
 
+```java
 //기본 작동 순서
 HTTP 요청 -> WAS -> 필터 -> 서블릿 -> 컨트롤러 
 
@@ -50,7 +51,9 @@ public interface Filter {
 
 
 ## 요청 로그
+
 ---
+
 Filter 적용 테스트로 log를 남기는 방법을 알아보자.
 
 > 주의사항, `import javax.servlet.Filter` 를 구현해야 한다.
@@ -106,7 +109,6 @@ public class LogFilter implements Filter {
 
 ```java
 
-
 @Configuration
 public class WebConfig {
     @Bean
@@ -133,9 +135,146 @@ public class WebConfig {
 
 
 ## 인증 체크
+
 ---
 
-3
+허가되지 않은 URI에 접근하지 못하게 만들어보자. (로그인 이전에 차단하고 싶은 URI)
+
+
+
+1. LoginCheckFilter 생성
+
+```java
+import hello.login.web.SessionConst;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.util.PatternMatchUtils;
+
+import javax.servlet.*;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+import java.io.IOException;
+
+@Slf4j
+public class LoginCheckFilter implements Filter {
+
+    private static final String[] whiteList = {"/", "/members/add", "/login", "/logout", "/css/*"};
+
+    @Override
+    public void doFilter(ServletRequest request, ServletResponse response, FilterChain chain) throws IOException, ServletException {
+        HttpServletRequest httpRequest = (HttpServletRequest) request;
+        String requestURI = httpRequest.getRequestURI();
+
+        HttpServletResponse httpServletResponse = (HttpServletResponse) response;
+
+        try {
+            log.info("인증 체크 필터 시작{}", requestURI);
+
+
+            if (isLoginCheckPath(requestURI)) {
+                log.info("인증 체크 로직 실행{}", requestURI);
+                HttpSession session = httpRequest.getSession(false);
+                if (session == null || session.getAttribute(SessionConst.LOGIN_MEMBER) == null) {
+                    log.info("미인증 사용자 요청{}", requestURI);
+                    //로그인으로 redirect
+                    httpServletResponse.sendRedirect("/login?redirectURL=" + requestURI);
+                    return;
+                }
+            }
+            chain.doFilter(request, response);
+        } catch (Exception e) {
+            throw e;
+        } finally {
+            log.info("인증 체크 필터 종료 {} ", requestURI);
+        }
+    }
+
+    /**
+     * 화이트 리스트의 경우 인증 체크 X
+     */
+    private boolean isLoginCheckPath(String requestUri) {
+        return !PatternMatchUtils.simpleMatch(whiteList, requestUri);
+    }
+}
+```
+
+* `HttpServletResponse httpServletResponse = (HttpServletResponse) response;`  : 더 강력한 기능을 위해 `ServletRequest`의 구현체로 다운캐스팅
+
+* `if (isLoginCheckPath(requestURI)) {` : 허용되지 않은 URI로 요청이 들어오면, 작동.
+
+  -> 코드에서는 `"/", "/members/add", "/login", "/logout", "/css/*"` 요청만 허가
+
+* ```
+  httpServletResponse.sendRedirect("/login?redirectURL=" + requestURI);
+  return;
+  추후에 로그인 이후, 자연스럽게 요청했던 URI로 redirect 시켜주기 위해 요청 URI저장,
+  바로 중지하는 모습. (`chain.doFilter`가 실행되지 않으면 요청은 그대로 중지)
+  ```
+
+
+
+> ```java
+  > PatternMatchUtils.simpleMatch(whiteList, requestUri);
+  > //"/uri" 로 패턴에 맞나 안맞나 체크하여 boolean으로 return 해준다.
+  > ```
+
+
+
+2. Filter를 Configuration에 Bean으로 등록
+
+```java
+@Configuration
+public class WebConfig {    
+	@Bean
+    public FilterRegistrationBean LoginCheckFilter() {
+        FilterRegistrationBean<Filter> filterFilterRegistrationBean = new FilterRegistrationBean<>();
+
+        //만든 로그필터 등록
+        filterFilterRegistrationBean.setFilter(new LoginCheckFilter());
+
+        //순서 등록
+        filterFilterRegistrationBean.setOrder(2);
+
+        //URL 패턴 적용
+        filterFilterRegistrationBean.addUrlPatterns("/*");
+
+        return filterFilterRegistrationBean;
+    }
+}
+```
+
+
+
+3. Controller 구현
+
+   -> Filter에 막혀 Login 페이지로 넘어간 URI 저장하여 바로 Login할 경우, 로그인 통과시 바로 해당 페이지 보여주게 작업
+
+```java
+    @PostMapping("/login")
+    public String loginV4(@Validated @ModelAttribute LoginForm loginForm, BindingResult bindingResult, HttpServletResponse response, @RequestParam(defaultValue = "/") String redirectURL) {
+        if (bindingResult.hasErrors()) {
+            return "login/loginForm";
+        }
+
+        Member loginMember = loginService.login(loginForm.getLoginId(), loginForm.getPassword());
+
+        if (loginMember == null) {
+            bindingResult.reject("loginFail", "아이디 또는 비밀번호가 맞지 않습니다.");
+            return "login/loginForm";
+        }
+
+        //로그인 성공처리 TODO
+        sessionManager.createSession(loginMember, response);
+
+        return "redirect:"+redirectURL;
+    }
+```
+
+* `@Validated @ModelAttribute LoginForm loginForm, BindingResult bindingResult` : LoginForm 객체에 지정해둔 Validation 어노테이션들의 규약조건에 따라, 맞지 않는 것들을 @Validated 검증한단 의미. BindingResult 객체에 오류들을 담아 자동으로 넣어준다.
+* `HttpServletResponse response` : Session 처리를 위해 Response를 받음
+* `@RequestParam(defaultValue = "/") String redirectURL` : LoginCheckFilter에서 Login 검증이 되지 않은 상태에서 잘못된 접근을 하면,  ("/login?redirectURL=" + requestURI); 경로로 redirect 시키는데, redirectURL이 없으면 기본 /, 있으면 직전 요청 저장하기 위한 용도.
+
+
 
 # 스프링 인터셉터
 ---
