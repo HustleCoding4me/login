@@ -108,7 +108,6 @@ public class LogFilter implements Filter {
 2. SpringBoot의 `FilterRegistrationBean` 에 등록
 
 ```java
-
 @Configuration
 public class WebConfig {
     @Bean
@@ -214,9 +213,9 @@ public class LoginCheckFilter implements Filter {
 
 
 > ```java
-  > PatternMatchUtils.simpleMatch(whiteList, requestUri);
-  > //"/uri" 로 패턴에 맞나 안맞나 체크하여 boolean으로 return 해준다.
-  > ```
+> PatternMatchUtils.simpleMatch(whiteList, requestUri);
+> //"/uri" 로 패턴에 맞나 안맞나 체크하여 boolean으로 return 해준다.
+> ```
 
 
 
@@ -359,7 +358,96 @@ Http요청 -> Dispatcher Servlet -> `1.preHandle` -> Controller ->`2.postHandle`
 
 ## 요청 로그
 
----
+**적용할 Interceptor 생성하기** 
+
+```java
+@Slf4j
+public class Loginterceptor implements HandlerInterceptor {
+
+  public static final String LOG_ID = "logId";
+
+  @Override
+  public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+    String requestURI = request.getRequestURI();
+    String uuid = UUID.randomUUID().toString();
+
+    request.setAttribute(LOG_ID,uuid);
+
+    if (handler instanceof HandlerMethod) {
+      HandlerMethod hm = (HandlerMethod) handler;
+    }
+
+    //@RequestMapping : HandlerMethod
+    //정적 리소스 : ResourceHttpRequestHandler
+
+    log.info("REQUEST [{}] [{}] [{}] [{}]", uuid, requestURI, handler);
+    return true;//실 handler가 호출되게 true
+  }
+
+  @Override
+  public void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler, ModelAndView modelAndView) throws Exception {
+    log.info("postHandler [{}]", modelAndView);
+  }
+
+  @Override
+  public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+    String requestURI = request.getRequestURI();
+    String uuid = (String) request.getAttribute(LOG_ID);
+    log.info("RESPONSE [{}][{}][{}]", uuid, requestURI, handler, ex);
+    if (ex != null) {
+      log.error("afterCOmpletion Error!");
+    }
+
+  }
+}
+```
+
+* `implements HandlerInterceptor` : HandlerInterceptor를 구현해줘야 한다. (Spring과의 약속~)
+
+* `preHandle` :  uuid를 만들어서 요청 Request에 Attribute로 담아준다. 요청 건수마다 개별 생성되는 request의 특성상, 요청이 종료될 때 까지 유지된다.
+
+  *     if (handler instanceof HandlerMethod) {
+          HandlerMethod hm = (HandlerMethod) handler;
+        }
+        
+        보통 @RequestMapping 류의 동적 리소스들은 모두 HandlerMethod를 받는다. 
+        
+        ![Screen Shot 2022-06-09 at 4 34 27 PM](https://user-images.githubusercontent.com/37995817/172791059-5c3cd9ca-20e8-4ee6-91aa-722c21091faf.png)
+
+
+    이렇게 많은 정보들이 담겨 있어서 사용 가능!
+
+    
+
+    
+
+* `afterCompletion` :  오류가 나도 실행되기 때문에, 오류 log를 남기기 위해서는 View까지 다녀온 이후 실행되는  `afterCompletion` 에 적어야 한다. 
+
+
+
+**생성한 Interceptor 적용하기**
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new Loginterceptor())
+            .order(1)
+            .addPathPatterns("/**")
+            .excludePathPatterns("/css/**", "/*.ico", "/error");
+    }
+}
+```
+
+* `WebMvcConfigurer` : `@Configuration` 파일에서 Interceptor를 달아줄 수 있는 메서드가 있는 인터페이스이다. 해당 인터페이스에서 `addInterceptors` 를 구현하여 사용한다.
+* `InterceptorRegistry` : registry에 체인 형식으로 adding을 해주는데, 여기에 우리가 만든 Interceptor를 생성하여 넣어주고, 동작 순서(`order`) ,인터셉터 작동할 패턴(`addPathPatterns`), 예외 패턴(`excludePathPatterns`)를 사용한다.
+
+#### Q: excludePathPAtterns를 매번 저렇게 적어줘야 하나? 공통관리로 빼어서 chain에서 제거해주는 방법이 있을 것 같다.
+
+
+
+
 
 ## 인증 체크
 
@@ -370,5 +458,3 @@ Http요청 -> Dispatcher Servlet -> `1.preHandle` -> Controller ->`2.postHandle`
 ---
 
 # 마무리
-
----
