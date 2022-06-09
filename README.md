@@ -141,7 +141,7 @@ public class WebConfig {
 
 
 
-1. LoginCheckFilter 생성
+1. **LoginCheckFilter 생성** 
 
 ```java
 import hello.login.web.SessionConst;
@@ -219,7 +219,7 @@ public class LoginCheckFilter implements Filter {
 
 
 
-2. Filter를 Configuration에 Bean으로 등록
+2. **Filter를 Configuration에 Bean으로 등록**
 
 ```java
 @Configuration
@@ -244,7 +244,7 @@ public class WebConfig {
 
 
 
-3. Controller 구현
+3. **Controller 구현**
 
    -> Filter에 막혀 Login 페이지로 넘어간 URI 저장하여 바로 Login할 경우, 로그인 통과시 바로 해당 페이지 보여주게 작업
 
@@ -406,22 +406,24 @@ public class Loginterceptor implements HandlerInterceptor {
 
 * `preHandle` :  uuid를 만들어서 요청 Request에 Attribute로 담아준다. 요청 건수마다 개별 생성되는 request의 특성상, 요청이 종료될 때 까지 유지된다.
 
-  *     if (handler instanceof HandlerMethod) {
-          HandlerMethod hm = (HandlerMethod) handler;
-        }
-        
-        보통 @RequestMapping 류의 동적 리소스들은 모두 HandlerMethod를 받는다. 
-	
-        
-        
-	![Screen Shot 2022-06-09 at 4 34 27 PM](https://user-images.githubusercontent.com/37995817/172791059-5c3cd9ca-20e8-4ee6-91aa-722c21091faf.png)
-	
+  * **return true** 여야 다음으로넘어간다.
+
+  * if (handler instanceof HandlerMethod) {
+      HandlerMethod hm = (HandlerMethod) handler;
+    }
+
+    보통 @RequestMapping 류의 동적 리소스들은 모두 HandlerMethod를 받는다. 
+
+    
+
+  ![Screen Shot 2022-06-09 at 4 34 27 PM](https://user-images.githubusercontent.com/37995817/172791059-5c3cd9ca-20e8-4ee6-91aa-722c21091faf.png)
+
 
     	이렇게 많은 정보들이 담겨 있어서 사용 가능!
 
     
 
-    
+  
 
 * `afterCompletion` :  오류가 나도 실행되기 때문에, 오류 log를 남기기 위해서는 View까지 다녀온 이후 실행되는  `afterCompletion` 에 적어야 한다. 
 
@@ -445,9 +447,13 @@ public class WebConfig implements WebMvcConfigurer {
 * `WebMvcConfigurer` : `@Configuration` 파일에서 Interceptor를 달아줄 수 있는 메서드가 있는 인터페이스이다. 해당 인터페이스에서 `addInterceptors` 를 구현하여 사용한다.
 * `InterceptorRegistry` : registry에 체인 형식으로 adding을 해주는데, 여기에 우리가 만든 Interceptor를 생성하여 넣어주고, 동작 순서(`order`) ,인터셉터 작동할 패턴(`addPathPatterns`), 예외 패턴(`excludePathPatterns`)를 사용한다.
 
-#### Q: excludePathPAtterns를 매번 저렇게 적어줘야 하나? 공통관리로 빼어서 chain에서 제거해주는 방법이 있을 것 같다.
+#### PathPatterns는 다양하게 정의할 수 있다. (글자 하나 일치 등) 필요할 때 공식문서 확인하자.
 
 
+
+#### 어떤 요청시에 인터셉터가 순서대로 작동하는 모습
+
+![Screen Shot 2022-06-09 at 5 59 22 PM](https://user-images.githubusercontent.com/37995817/172808285-d6d043cd-87e0-4732-bbb1-e3b4505da514.png)
 
 
 
@@ -455,8 +461,211 @@ public class WebConfig implements WebMvcConfigurer {
 
 ---
 
-## ArgumentResolver 사용
 
----
+
+요청이 들어올 때 마다 로그인을 했는지에 대한 체크를 하는 Interceptor를 제작한다. 
+
+
+
+**1. 역시나 `HandlerInterceptor` 구현**
+
+```java
+@Slf4j
+public class LoginCheckInterceptor implements HandlerInterceptor {
+  @Override
+  public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+    String requestURI = request.getRequestURI();
+
+    log.info("인증 체크 인터셉터 실행 {}", requestURI);
+
+    HttpSession session = request.getSession();
+
+    if (session == null || session.getAttribute(SessionConst.LOGIN_MEMBER) == null) {
+      log.info("미인증 사용자 요청");
+      //로그인으로 redirect
+      response.sendRedirect("/login?redirectURL=" + requestURI);
+      return false;
+    }
+    return true;
+  }
+
+  //whiteList가 없는 이유, Interceptor 등록할 때 다 가능하다.
+}
+```
+
+
+
+#### Q.`PreHandle`만 구현한 이유?
+
+* Interface의 Default
+
+  * 로그인 인증이기 때문에, Controller 요청 가기 전에만 체크하면 된다. 로그인은 `PreHandle` 단계에서만 체크하면 충분하다.
+
+  * 자바 8 이상부터 나온 **Interface에 default** 를 붙이면, 추후 상속시에 구현하지 않아도 사용이 가능하다. 
+
+  * ```java
+    public interface HandlerInterceptor {
+    
+    default boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
+    			throws Exception {
+    
+    		return true;
+    	}	
+    	default void postHandle(HttpServletRequest request, HttpServletResponse response, Object handler,
+    			@Nullable ModelAndView modelAndView) throws Exception {
+    	}
+    	default void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler,
+    			@Nullable Exception ex) throws Exception {
+    	}
+      
+    }
+    ```
+
+
+
+**2. Configuration `WebMvcConfigurer` 등록**
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    public static String[] defaultWhiteList = {"/css/**", "/*.ico", "/error"};
+    @Override
+    public void addInterceptors(InterceptorRegistry registry) {
+        registry.addInterceptor(new Loginterceptor())
+            .order(1)
+            .addPathPatterns("/**")
+            .excludePathPatterns(defaultWhiteList);
+
+        registry.addInterceptor(new LoginCheckInterceptor())
+            .order(2)
+            .addPathPatterns("/**")
+            .excludePathPatterns("/", "/members/add", "/login", "/logout")
+            .excludePathPatterns(defaultWhiteList);
+    }
+}
+```
+
+* `WebMvcConfigurer` : Interceptor 등록하기 위한 인터페이스이다.
+* `excludePathPatterns` : 제외 패턴에 String배열로 공통적인 제외문들을 빼줬다.
+
+
+
+## 더 간단히 구현하는 방법 ArgumentResolver 사용 (Custom Annotation)
+
+`@Login` 어노테이션을 만들거다. `ArgumentResolver` 를 구현하여 로그인이 되었는지 아니었는지 체크를 쉽고 간단하게 해보자.
+
+request의 Session에서 해당 유저가 있는지 없는지 확인에 대한 동작을 어노테이션으로 처리할 수 있다.
+
+* `@Login` : 자동으로 세션에 있는 로그인 회원을 찾아주고, 세션에 없으면 null을 반환
+
+
+
+#### **Annotation @Login 생성**
+
+```java
+@Target(ElementType.PARAMETER)//파라미터 대상으로 사용
+@Retention(RetentionPolicy.RUNTIME)//동작할 때 까지 어노테이션이 남아있어야 한다.
+public @interface Login {
+}
+```
+
+* `@Target(ElementType.PARAMETER)` : 설정 대상이 파라미터라는 의미
+* `@Retention(RetentionPolicy.RUNTIME)` : 어노테이션이 Runtime시 까지 남아있어야 한다.
+
+
+
+#### **ArgumentResolver 제작, 등록**
+
+* `ArgumentResolver` : Spring에서 제공해주는 파라미터 인자들의 자동주입을 담당하는 역할이라고 보면 된다.
+
+`HandlerMethodArgumentResolver`를 구현하여야 한다.
+
+```java
+public interface HandlerMethodArgumentResolver {
+  boolean supportsParameter(MethodParameter parameter);
+  	@Nullable
+	
+  Object resolveArgument(MethodParameter parameter, @Nullable ModelAndViewContainer mavContainer,
+			NativeWebRequest webRequest, @Nullable WebDataBinderFactory binderFactory) throws Exception;
+}
+```
+
+* `supportsParameter` : 어떤 조건에 Parameter를 주입해줘야 하는지 정의. True시에 실행이다. **서버 기동시 최초만 실행되고, 캐싱되어 값이 저장되기 때문에 크게 성능 이슈가 없다.**
+* `resolveArgument` : `@Login` 어노테이션이 달렸고, Member 클래스라면 어떤 값을 주입해줄 것인지 결정해주는 동작을 한다.
+
+
+
+##### ArgumentResolver 제작
+
+```java
+@Slf4j
+public class LoginMemberArgumentResolver implements HandlerMethodArgumentResolver {
+  @Override
+  public boolean supportsParameter(MethodParameter parameter) {
+    log.info("supportsParameter 실행");
+
+    boolean hasLoginAnnotation = parameter.hasParameterAnnotation(Login.class);//파라미터가 로그인 Anno를 가지고 있냐
+    boolean hasMemberType = Member.class.isAssignableFrom(parameter.getParameterType());//파라미터의 Class가 해당 타입인지
+    return hasLoginAnnotation && hasMemberType;//Anno가 붙어있고 Member.class면 실행
+  }
+
+  @Override
+  public Object resolveArgument(MethodParameter parameter, ModelAndViewContainer mavContainer, NativeWebRequest webRequest, WebDataBinderFactory binderFactory) throws Exception {
+    log.info("resolveArgument 실행");
+
+    HttpServletRequest nativeRequest = (HttpServletRequest) webRequest.getNativeRequest();
+    HttpSession session = nativeRequest.getSession(false);
+    if (session == null) {
+      return null;
+    }
+    return session.getAttribute(SessionConst.LOGIN_MEMBER);
+  }
+}
+
+```
+
+* `@Login` 어노테이션이 붙은 것 중, Member 클래스면 request의 `Session` 에서 로그인 멤버가 있으면 전송해주고, 없으면 null을 보낸다.
+
+
+
+##### ArgumentResolver 등록
+
+```java
+@Configuration
+public class WebConfig implements WebMvcConfigurer {
+
+    @Override
+    public void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+        resolvers.add(new LoginMemberArgumentResolver());
+    }
+}
+```
+
+* `WebMvcConfigurer`: Interceptor 말고도 ArgumentResolver도 추가 해줄 수 있는 메서드가 존재하여 사용 (웹 관련은 다 있으니 당연한가?)
+
+
+
+##### 직접 제작한 Anno 사용
+
+```java
+    @GetMapping("/")
+    public String homeLogin(@Login Member loginMember, Model model) {
+        if (loginMember == null) {
+            return "home";
+        }
+
+        model.addAttribute("member", loginMember);
+        return "loginHome";
+    }
+```
+
+* `@Login Member loginMember` : 직접 만든 어노테이션을 붙이고 Member를 받으면, 최초 request시에 세션이 존재하는가 checking, 있으면 유저를 반환, 없으면 최초라 판단하고 null 넘긴다.
+
+
 
 # 마무리
+
+
+
+**Filter** 보다는 **Spring Interceptor** 를 사용할 것이고, 반복적인 요청이 필요할 경우 `ArgumentResolver` 를 사용하여 CustomAnnotation을 제작해 활용하면, 협업시에 큰 도움이 될 것 같다.
