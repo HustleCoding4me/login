@@ -411,11 +411,13 @@ public class Loginterceptor implements HandlerInterceptor {
         }
         
         보통 @RequestMapping 류의 동적 리소스들은 모두 HandlerMethod를 받는다. 
+	
         
-        ![Screen Shot 2022-06-09 at 4 34 27 PM](https://user-images.githubusercontent.com/37995817/172791059-5c3cd9ca-20e8-4ee6-91aa-722c21091faf.png)
+        
+	![Screen Shot 2022-06-09 at 4 34 27 PM](https://user-images.githubusercontent.com/37995817/172791059-5c3cd9ca-20e8-4ee6-91aa-722c21091faf.png)
+	
 
-
-    이렇게 많은 정보들이 담겨 있어서 사용 가능!
+    	이렇게 많은 정보들이 담겨 있어서 사용 가능!
 
     
 
